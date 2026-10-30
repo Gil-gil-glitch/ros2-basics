@@ -1,0 +1,16 @@
+# Virtual environment (each person creates their own; never commit it)
+.venv/
+venv/
+
+# ROS 2 build output, in case a workspace is ever created inside this repo
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.DS_Store
