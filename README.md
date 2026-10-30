@@ -70,21 +70,40 @@ source ~/.bashrc
 echo $ROS_DOMAIN_ID                                       # check
 ```
 
-### 0.3 Install MediaPipe and get the model
+### 0.3 Create your workspace and its virtual environment
 
-ROS 2 Humble uses Ubuntu's own Python, so we install MediaPipe there with
-`--user` instead of in a virtual environment (a virtual environment would
-hide ROS 2's Python packages).
+Just like in the MediaPipe lessons, MediaPipe and OpenCV go into a
+**virtual environment** (venv), a private set of Python packages. This time
+it lives inside your ROS 2 workspace, `~/ros2_ws` (section 2 explains workspaces).
+
+```bash
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws
+python3 -m venv --system-site-packages .venv
+touch .venv/COLCON_IGNORE
+source .venv/bin/activate
+```
+
+Two things are different from the MediaPipe lessons:
+
+| | Why |
+|---|---|
+| `--system-site-packages` | ROS 2's Python packages (`rclpy`, `colcon`, ...) are installed in Ubuntu's Python. This option lets the venv **see** them too. Without it, nothing ROS 2 works inside the venv. |
+| `touch .venv/COLCON_IGNORE` | An empty file that tells ROS 2's build tool to skip the venv folder when it looks for packages. |
+
+If `python3 -m venv` says `ensurepip is not available`, run
+`sudo apt install python3-venv`, then delete the half-made folder with
+`rm -rf .venv` and run the commands above again.
+
+Your prompt now starts with `(.venv)`: the venv is active. Install the packages:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install mediapipe "numpy<2" "opencv-contrib-python<4.11"
+```
 
 The version limits are important: newer versions bring in NumPy 2, which
 breaks ROS 2 Humble's Python packages.
-
-```bash
-python3 -m pip install --user mediapipe "numpy<2" "opencv-contrib-python<4.11"
-```
-
-If it says `No module named pip`, install pip first with
-`sudo apt install python3-pip` and try again.
 
 The gesture node loads the model from your MediaPipe lessons folder, so the
 folder must be in your home folder as `~/mediapipe-first-steps`:
@@ -93,19 +112,21 @@ folder must be in your home folder as `~/mediapipe-first-steps`:
 cd ~
 git clone <URL of the mediapipe-first-steps repository>
 cd ~/mediapipe-first-steps
-python3 download_models.py
+python download_models.py
 ```
 
 Check that everything imports together:
 
 ```bash
-python3 -c "import rclpy, cv2, mediapipe; print('All good!')"
+python -c "import rclpy, cv2, mediapipe; print('All good!')"
 ```
 
 ### 0.4 Check the camera
 
+With the venv still active:
+
 ```bash
-python3 ~/mediapipe-first-steps/lessons/part1_opencv/01_open_camera.py
+python ~/mediapipe-first-steps/lessons/part1_opencv/01_open_camera.py
 ```
 
 **Black picture?** ThinkPads have a small sliding cover over the camera (the
@@ -177,14 +198,18 @@ unit of code inside it, usually several related nodes.
 
 ```
 ~/ros2_ws/                 <- the workspace (you run colcon build HERE)
+├── .venv/                 <- your virtual environment (from section 0.3)
 └── src/                   <- your packages go in here
     └── gesture_bridge/    <- the package you'll create
 ```
 
-### 2.1 Create the workspace
+### 2.1 Go to the workspace
+
+You already created `~/ros2_ws/src` in section 0.3. Make sure the venv is
+active (your prompt starts with `(.venv)`), then go into `src`:
 
 ```bash
-mkdir -p ~/ros2_ws/src
+source ~/ros2_ws/.venv/bin/activate
 cd ~/ros2_ws/src
 ```
 
@@ -232,16 +257,24 @@ where your node files go.
 
 ### 2.4 Build it for the first time
 
-Builds always run from the **workspace folder**, never from `src/`:
+Builds always run from the **workspace folder**, never from `src/`, and
+always with the **venv active**:
 
 ```bash
 cd ~/ros2_ws
-colcon build --symlink-install
+python -m colcon build --symlink-install
 ```
 
 `colcon` is ROS 2's build tool. `--symlink-install` links to your Python
 files instead of copying them, so later edits to them work **without
 rebuilding**. Always use it.
+
+> **Why `python -m colcon` and not just `colcon`?** When colcon builds a
+> node, it writes down which Python should run it. Started as
+> `python -m colcon` from the venv, it writes down the **venv's** Python, the
+> one with MediaPipe and OpenCV. Plain `colcon build` writes down Ubuntu's
+> Python instead, and your gesture node fails with
+> `No module named 'cv2'`. (If that happens, just rebuild the right way.)
 
 You now have three new folders:
 
@@ -263,8 +296,13 @@ ros2 pkg list | grep gesture_bridge
 "Sourcing" tells **this terminal** where your workspace is. It prints
 `gesture_bridge` if it worked.
 
-> **Remember:** every new terminal needs `source ~/ros2_ws/install/setup.bash`
-> before it can find your package. This is the most common ROS 2 mistake.
+> **Remember: every new terminal needs these two lines.** Forgetting them
+> is the most common ROS 2 mistake.
+>
+> ```bash
+> source ~/ros2_ws/.venv/bin/activate
+> source ~/ros2_ws/install/setup.bash
+> ```
 
 ---
 
@@ -359,7 +397,7 @@ A new entry point **always** needs a rebuild:
 
 ```bash
 cd ~/ros2_ws
-colcon build --symlink-install
+python -m colcon build --symlink-install
 source install/setup.bash
 ros2 run gesture_bridge coordinator
 ```
@@ -377,6 +415,7 @@ It's waiting. Nothing is publishing yet.
 Open a **second terminal** and publish one message yourself:
 
 ```bash
+source ~/ros2_ws/.venv/bin/activate
 source ~/ros2_ws/install/setup.bash
 ros2 topic pub --once /gesture std_msgs/msg/String "{data: Thumb_Up}"
 ```
@@ -523,7 +562,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-# The model downloaded in the MediaPipe lessons (python3 download_models.py).
+# The model downloaded in the MediaPipe lessons (python download_models.py).
 MODEL_PATH = Path.home() / 'mediapipe-first-steps' / 'models' / 'gesture_recognizer.task'
 CAMERA_INDEX = 0
 HOLD_FRAMES = 8      # a gesture must be seen this many frames in a row to count
@@ -651,28 +690,31 @@ New entry point, so rebuild:
 
 ```bash
 cd ~/ros2_ws
-colcon build --symlink-install
+python -m colcon build --symlink-install
 source install/setup.bash
 ```
 
 ### 4.5 Run the whole system
 
-You'll use three terminals. Remember to source in each new one.
+You'll use three terminals. Remember the two `source` lines in each new one.
 
 ```bash
 # Terminal 1: the listener
+source ~/ros2_ws/.venv/bin/activate
 source ~/ros2_ws/install/setup.bash
 ros2 run gesture_bridge coordinator
 ```
 
 ```bash
 # Terminal 2: the camera
+source ~/ros2_ws/.venv/bin/activate
 source ~/ros2_ws/install/setup.bash
 ros2 run gesture_bridge gesture_publisher
 ```
 
 ```bash
 # Terminal 3: watch the raw messages on the topic
+source ~/ros2_ws/.venv/bin/activate
 source ~/ros2_ws/install/setup.bash
 ros2 topic echo /gesture std_msgs/msg/String
 ```
